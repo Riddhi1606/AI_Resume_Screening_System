@@ -1,0 +1,58 @@
+"""
+Semantic Matcher Module
+Uses Sentence-BERT to compute semantic similarity between a resume and a job description.
+"""
+
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+import streamlit as st
+
+
+@st.cache_resource
+def load_model():
+    """
+    Load and cache the Sentence-BERT model so it's only loaded once per session.
+    'all-MiniLM-L6-v2' is small, fast, and accurate enough for resume-JD matching.
+    """
+    return SentenceTransformer("all-MiniLM-L6-v2")
+
+
+def compute_similarity(resume_text: str, jd_text: str, model=None) -> float:
+    """
+    Returns a match score between 0-100 representing semantic similarity
+    between resume text and job description text.
+    """
+    if model is None:
+        model = load_model()
+
+    embeddings = model.encode([resume_text, jd_text])
+    score = cosine_similarity(
+        embeddings[0].reshape(1, -1),
+        embeddings[1].reshape(1, -1)
+    )[0][0]
+
+    # Cosine similarity is typically 0-1 for sentence embeddings; scale to percentage.
+    return round(float(score) * 100, 2)
+
+
+def rank_resumes(resume_texts: dict, jd_text: str) -> list:
+    """
+    resume_texts: dict of {filename: text}
+    Returns a list of dicts sorted by match score descending:
+    [{"filename": ..., "score": ...}, ...]
+    """
+    model = load_model()
+    jd_embedding = model.encode(jd_text)
+
+    results = []
+    for filename, text in resume_texts.items():
+        resume_embedding = model.encode(text)
+        score = cosine_similarity(
+            resume_embedding.reshape(1, -1),
+            jd_embedding.reshape(1, -1)
+        )[0][0]
+        results.append({"filename": filename, "score": round(float(score) * 100, 2)})
+
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results
