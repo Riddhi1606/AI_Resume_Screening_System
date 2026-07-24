@@ -14,12 +14,12 @@ _ALIAS_LOOKUP = build_alias_lookup()
 
 
 def _load_nlp():
-    """Load spaCy model (blank tokenizer-only pipeline is enough for phrase matching)."""
-    try:
-        return spacy.load("en_core_web_sm", disable=["ner", "parser", "tagger", "lemmatizer"])
-    except OSError:
-        # Fallback: blank English pipeline (tokenizer only) if the full model isn't available.
-        return spacy.blank("en")
+    """
+    Use spaCy's blank English pipeline (tokenizer only). We only need
+    tokenization for PhraseMatcher — no need for the full downloadable
+    en_core_web_sm model, which avoids a fragile extra download step.
+    """
+    return spacy.blank("en")
 
 
 _NLP = _load_nlp()
