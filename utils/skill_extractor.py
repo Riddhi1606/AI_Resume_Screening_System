@@ -1,56 +1,64 @@
 """
 Skill Extractor Module
-Matches known skills/keywords present in both resume and job description.
+Uses spaCy's PhraseMatcher against a curated skill taxonomy to extract
+canonical skills from text. Handles synonyms/aliases (e.g. "ML" -> "machine learning")
+so matching is far more robust than plain string search.
 """
 
-import re
+import spacy
+from spacy.matcher import PhraseMatcher
 
-# A reasonably broad skill dictionary — extend this as needed for your domain.
-SKILL_DB = [
-    # Programming languages
-    "python", "java", "c++", "c#", "javascript", "typescript", "sql", "r",
-    # ML / AI
-    "machine learning", "deep learning", "nlp", "natural language processing",
-    "computer vision", "bert", "transformers", "scikit-learn", "tensorflow",
-    "pytorch", "keras", "xgboost", "random forest", "neural networks",
-    "sentence-bert", "llm", "generative ai", "data science",
-    # Data
-    "pandas", "numpy", "data analysis", "data visualization", "matplotlib",
-    "seaborn", "power bi", "tableau", "excel",
-    # Web / tools
-    "streamlit", "flask", "django", "fastapi", "react", "node.js", "git",
-    "github", "docker", "kubernetes", "aws", "azure", "gcp",
-    # Databases
-    "mysql", "postgresql", "mongodb", "faiss", "chromadb", "vector database",
-    # Soft/process
-    "agile", "communication", "teamwork", "leadership", "problem solving",
-]
+from utils.skill_taxonomy import SKILL_TAXONOMY, build_alias_lookup
+
+_ALIAS_LOOKUP = build_alias_lookup()
 
 
-def extract_skills(text: str, skill_db=None) -> set:
-    """Return the set of known skills found in the given text (case-insensitive)."""
-    if skill_db is None:
-        skill_db = SKILL_DB
+def _load_nlp():
+    """Load spaCy model (blank tokenizer-only pipeline is enough for phrase matching)."""
+    try:
+        return spacy.load("en_core_web_sm", disable=["ner", "parser", "tagger", "lemmatizer"])
+    except OSError:
+        # Fallback: blank English pipeline (tokenizer only) if the full model isn't available.
+        return spacy.blank("en")
 
-    text_lower = text.lower()
+
+_NLP = _load_nlp()
+
+
+def _build_matcher(nlp) -> PhraseMatcher:
+    matcher = PhraseMatcher(nlp.vocab, attr="LOWER")
+    for canonical, aliases in SKILL_TAXONOMY.items():
+        patterns = [nlp.make_doc(alias) for alias in aliases]
+        matcher.add(canonical, patterns)
+    return matcher
+
+
+_MATCHER = _build_matcher(_NLP)
+
+
+def extract_skills(text: str) -> set:
+    """
+    Return the set of canonical skills found in the given text.
+    Recognizes synonyms/aliases via the skill taxonomy (e.g. 'ML', 'sklearn').
+    """
+    doc = _NLP(text)
+    matches = _MATCHER(doc)
     found = set()
-    for skill in skill_db:
-        # word-boundary aware match so 'r' doesn't match inside 'for' etc.
-        pattern = r"(?<![a-zA-Z0-9])" + re.escape(skill.lower()) + r"(?![a-zA-Z0-9])"
-        if re.search(pattern, text_lower):
-            found.add(skill)
+    for match_id, start, end in matches:
+        canonical = _NLP.vocab.strings[match_id]
+        found.add(canonical)
     return found
 
 
 def matched_skills(resume_text: str, jd_text: str) -> list:
-    """Skills that appear in BOTH resume and job description."""
+    """Canonical skills that appear in BOTH resume and job description."""
     resume_skills = extract_skills(resume_text)
     jd_skills = extract_skills(jd_text)
     return sorted(resume_skills & jd_skills)
 
 
 def missing_skills(resume_text: str, jd_text: str) -> list:
-    """Skills required by JD but not found in the resume."""
+    """Canonical skills required by the JD but not found in the resume."""
     resume_skills = extract_skills(resume_text)
     jd_skills = extract_skills(jd_text)
     return sorted(jd_skills - resume_skills)
