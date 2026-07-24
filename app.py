@@ -8,7 +8,7 @@ import pandas as pd
 
 from utils.resume_parser import extract_resume_text, clean_text
 from utils.matcher import load_model, rank_resumes
-from utils.skill_extractor import matched_skills, missing_skills
+from utils.skill_extractor import matched_skills, missing_skills, extract_skills
 
 st.set_page_config(page_title="AI Resume Screening System", page_icon="🧠", layout="wide")
 
@@ -49,23 +49,32 @@ if analyze:
                 raw_text = extract_resume_text(file)
                 resume_texts[file.name] = clean_text(raw_text)
 
-            ranked = rank_resumes(resume_texts, jd_text)
+            semantic_ranked = rank_resumes(resume_texts, jd_text)
+            semantic_scores = {entry["filename"]: entry["score"] for entry in semantic_ranked}
 
-            # Build results table with skill matches
+            jd_skills = extract_skills(jd_text)
+
+            # Build results table with a composite score:
+            # 60% semantic similarity + 40% skill overlap with the JD.
+            # This reflects how real ATS tools score candidates, and avoids
+            # raw cosine-similarity numbers looking artificially low.
             rows = []
-            for entry in ranked:
-                fname = entry["filename"]
-                score = entry["score"]
+            for fname in resume_texts:
+                semantic_score = semantic_scores[fname]
                 matched = matched_skills(resume_texts[fname], jd_text)
                 missing = missing_skills(resume_texts[fname], jd_text)
+
+                skill_score = (len(matched) / len(jd_skills) * 100) if jd_skills else 0
+                composite_score = round(0.6 * semantic_score + 0.4 * skill_score, 1)
+
                 rows.append({
                     "Candidate": fname,
-                    "Match Score (%)": score,
+                    "Match Score (%)": composite_score,
                     "Skills Matched": ", ".join(matched) if matched else "—",
                     "Skills Missing": ", ".join(missing) if missing else "—",
                 })
 
-            df = pd.DataFrame(rows)
+            df = pd.DataFrame(rows).sort_values("Match Score (%)", ascending=False).reset_index(drop=True)
 
         st.subheader("🏆 Ranked Candidates")
         st.dataframe(
