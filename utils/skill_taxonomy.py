@@ -30,7 +30,7 @@ SKILL_TAXONOMY = {
 
     # ML/DL Frameworks & Libraries
     "scikit-learn": ["scikit-learn", "sklearn", "scikit learn"],
-    "tensorflow": ["tensorflow", "tf"],
+    "tensorflow": ["tensorflow"],
     "pytorch": ["pytorch", "torch"],
     "keras": ["keras"],
     "xgboost": ["xgboost", "xg boost"],
